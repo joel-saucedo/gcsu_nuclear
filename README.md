@@ -1,6 +1,6 @@
 # GCSU Nuclear Physics Toolkit
 
-A modern Python implementation of the legacy Fortran STOPX and KINEQ codes developed at Oak Ridge National Laboratory. This toolkit provides high-fidelity energy loss calculations and nuclear reaction kinematics for charged particles in matter.
+A modern Python implementation of the legacy Fortran STOPX and KINEQ codes developed at Oak Ridge National Laboratory. This toolkit provides fast energy loss calculations and nuclear reaction kinematics for charged particles in matter.
 
 ## Overview
 
@@ -174,7 +174,6 @@ The `KineqModel` class provides reaction kinematics:
 - `set_angle_data(elab, amin, amax, da)`: Set angle calculation parameters
 - `set_energy_data(alab, emin, emax, de)`: Set energy calculation parameters
 - `calculate_kinematics(angles, energies)`: Calculate reaction kinematics
-
 
 ## License
 
