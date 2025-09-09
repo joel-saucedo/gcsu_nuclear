@@ -1,0 +1,1452 @@
+C$PROG STOPX
+C
+C     **************************************************************
+C      PROGRAM STOP
+C      WRITTEN BY T.C.AWES ORNL
+C      JULY 1983
+C      CALCULATES ENERGY LOSSES FOR ALL Z'S IN ANY ABSORBER
+C      OR SERIES OF ABSORBERS.
+C     **************************************************************
+C
+C     MAIN PROGRAM
+C
+      COMMON/IO/ LIN,LON,LON2,LON3
+      COMMON /ABSS/AZ(5,10),AA(5,10),INUM(5,10),IKEY(5,10),FRACT(5,10),
+     1 NCOM(10),PRES(10),THCK(10),IONZ(10)
+      REAL*4 IONZ,SPWR(10)
+      COMMON /PROJ/ PZ(100),PA(100),EP(500)
+      INTEGER*4 IWD(20),ICH(80)
+      INTEGER*4 NAMFIL(20),IBUF(505)
+      CHARACTER*80 CNAMFIL
+      EQUIVALENCE (CNAMFIL,NAMFIL)
+      INTEGER*2 KMD1
+      DATA IBUF/505*0/,IDIV,IFILE/2*.FALSE./
+      DIMENSION RNGE(10000),ERES(500,11),MESBUF(30),THCKCM(10)
+C
+C
+      REAL*4 IAVE,ION(92),IONGS(92),CON(92),C2S(92),DENSITY(92)
+      REAL*4 A0S(10),A1S(10),A2S(10),A3S(10),A4S(10)
+      LOGICAL ISW4,IDIV,IFILE
+      COMMON /ARRAYS/ION,IONGS,C2S,A0S,A1S,A2S,A3S,A4S
+      COMMON /CONSTANT/TMC2,PI,E4,CON,DENSITY
+      COMMON /CONTROL/ISW1,ISW2,ISW3,ISW4
+      COMMON /PARTICLE/IZT,IZP,ZT,ZP,AT,AP,SPWRH
+      REAL*8 R0
+      COMMON /RUNGE/DER,EMIN,E0,DUMY,R0
+      COMMON /STOPPING/IAVE,CFACT,C2,A0,A1,A2,A3,A4
+C   
+      OPEN(UNIT=6,STATUS='UNKNOWN',CARRIAGECONTROL='FORTRAN')
+C
+      OPEN(UNIT       = 7,
+     &     FILE       = 'stopx.log',
+     &     STATUS     = 'UNKNOWN',
+     &     ACCESS     = 'APPEND')
+C
+      LOF=8
+      LINF=3
+      IE=0
+      IM=0
+      IP=0
+      WRITE(LON,1000)
+ 1000 FORMAT(' Type: HELP  for a list of COMMANDS')
+ 1050 FORMAT(1H1)
+ 1052 FORMAT(1H /)
+      GO TO 10
+C
+    2 WRITE(LON,3)
+    3 FORMAT(1H ,'END-OF-FILE ON CMD FILE')
+C
+    4 IF(LIN.NE.5) WRITE(LON,5)
+    5 FORMAT(1H ,'CONTROL SWITCHED TO VDT (TERMINAL)')
+      LIN=5
+C
+   10 WRITE(LON,1100)
+ 1100 FORMAT(' ENTER COMMAND-')
+      READ(LIN,1200,END=2,ERR=4)IWD
+ 1200 FORMAT(20A4)
+C
+      IF(LIN.NE.5) WRITE(LON,12)IWD
+   12 FORMAT(1H ,19A4,A2)
+      CALL CASEUP1(IWD)
+C
+      IF(IWD(1).EQ.'CMDF') GO TO 110
+      IF(IWD(1).EQ.'CMD ') GO TO 110
+C
+      CALL CASEUP(IWD)
+C
+      KMD=IWD(1)
+      DECODE(2,20,IWD)KMD1
+   20 FORMAT(A2)
+      IF(IP.NE.1) GO TO 30
+      IF(IE.EQ.0) GO TO 30
+      IF(IDIV) GO TO 30
+      AP=PA(1)
+      DEP=DEP/AP
+      DO 25 I=1,IE
+   25 EP(I)=EP(I)/AP
+      IDIV=.TRUE.
+   30 CONTINUE
+      IF (KMD.EQ.'HELP') GO TO 100
+      IF (KMD.EQ.'HLPX') GO TO 100
+      IF (KMD.EQ.'ABSB') GO TO 150
+      IF (KMD.EQ.'DEDX') GO TO 200
+      IF (KMD.EQ.'RNGE') GO TO 250
+      IF (KMD.EQ.'ELOS') GO TO 300
+      IF (KMD.EQ.'PROJ') GO TO 350
+      IF (KMD1.EQ.'EA') GO TO 400
+      IF (KMD1.EQ.'LP') GO TO 450
+      IF (KMD1.EQ.'CO') GO TO 500
+      IF (KMD.EQ.'FILE') GO TO 550
+      IF (KMD.EQ.'EXIT') GO TO 800
+      IF (KMD.EQ.'END ') GO TO 800
+      IF (KMD1.EQ.'GO') GO TO 800
+      GO TO 900
+  100 CALL HELPMAN(KMD)
+      GO TO 10
+C
+  110 CALL NUCMD(IWD,LINF,LIN,IERR)
+      GO TO 10
+C
+  150 CONTINUE
+      DO 155 J=1,10
+      DO 155 I=1,5
+      AZ(I,J)=0
+      AA(I,J)=0
+      INUM(I,J)=0
+      IKEY(I,J)=0
+      FRACT(I,J)=0.
+      NCOM(J)=0
+      PRES(J)=0.
+      THCK(J)=0.
+  155 CONTINUE
+      IM=1
+      WRITE(LON2,1300)
+ 1300 FORMAT(' ',' ABSORBER DEFINITIONS.')
+  160 WRITE(LON,1400) IM
+      WRITE(LON3,1400) IM
+ 1400 FORMAT(' ABSORBER #',I2,':')
+      READ(LIN,1200,END=2,ERR=4)IWD
+      CALL CASEUP(IWD)
+      IF(LIN.NE.5) WRITE(LON,12)IWD
+      WRITE(LON3,1450) (IWD(I),I=1,20)
+ 1450 FORMAT(' ',20A4)
+      CALL ABSORBER(IWD,80,IM,IFLG)
+      IF (PRES(IM).GT.0..OR.THCK(IM).GE.0.) GO TO 165
+      IF (NCOM(IM).EQ.1.AND.DENSITY(IFIX(AZ(1,IM))).NE.1.) GO TO 165
+C
+C     **************************************************************
+C     DO NOT HAVE DENSITY OF SOLID TO CONVERT FROM CM TO MG/CM2
+C     **************************************************************
+C
+      WRITE(LON,9300)
+      GO TO 160
+  165 CONTINUE
+      GO TO (170,180,160),IFLG
+  170 IM=IM+1
+      IF (IM.GT.10) GO TO 180
+      GO TO 160
+  180 IM=IM-1
+      DO 195 J=1,IM
+      NC=NCOM(J)
+      DO 181 I=1,NC
+      JN=INUM(I,J)
+      IZT=AZ(I,J)
+      IF (AA(I,J).EQ.0.) AA(I,J)=CON(IZT)*0.6023
+      AA(I,J)=AA(I,J)*JN
+  181 AZ(I,J)=AZ(I,J)*JN
+      IF (PRES(J).EQ.0.) GO TO 184
+C
+C     **************************************************************
+C     CALCULATE EFFECTIVE Z OF GAS MOLECULE.
+C     **************************************************************
+C
+      INDX=1
+      FSUM=INUM(1,J)*FRACT(1,J)
+      IZ=AZ(1,J)/INUM(1,J)
+      IAVE=IONGS(IZ)*FSUM
+      IF (IAVE.EQ.0.) IAVE=ION(IZ)*FSUM
+      KEY=IKEY(1,J)
+      INUM(1,J)=1
+      DO 183 I=2,NC
+      IZ=AZ(I,J)/INUM(I,J)
+      AVEI=IONGS(IZ)
+      IF (AVEI.EQ.0.) AVEI=ION(IZ)
+      IF (IKEY(I,J).EQ.KEY) GO TO 182
+      INDX=INDX+1
+      AZ(INDX,J)=AZ(I,J)
+      AA(INDX,J)=AA(I,J)
+      INUM(INDX,J)=1
+      FRACT(INDX,J)=FRACT(I,J)
+      KEY=IKEY(I,J)
+      GO TO 179
+  182 AZ(INDX,J)=AZ(INDX,J)+AZ(I,J)
+      AA(INDX,J)=AA(INDX,J)+AA(I,J)
+  179 FRCT=INUM(I,J)*FRACT(INDX,J)
+      FSUM=FSUM+FRCT
+      IAVE=IAVE+AVEI*FRCT
+  183 CONTINUE
+      NC=INDX
+      IONZ(J)=IAVE/FSUM
+      GO TO 190
+C
+C     **************************************************************
+C     CALCULATE RELATIVE AMOUNTS IN SOLID COMPOUNDS.
+C     **************************************************************
+C
+  184 CONTINUE
+      ICNT=0
+      FRCT=FRACT(1,J)
+      INSUM=INUM(1,J)
+      KEY=IKEY(1,J)
+      DO 189 I=2,NC+1
+      IF (I.GT.NC.AND.ICNT.NE.0) GO TO 185
+      IF (I.GT.NC) GO TO 189
+      IF (IKEY(I,J).EQ.KEY) GO TO 188
+      IF (ICNT.EQ.0) GO TO 187
+  185 FRCT=FRCT/INSUM
+      DO 186 K=I-ICNT-1,I-1
+  186 FRACT(K,J)=FRCT
+      ICNT=0
+  187 FRCT=FRACT(I,J)
+      INSUM=INUM(I,J)
+      KEY=IKEY(I,J)
+      GO TO 189
+  188 INSUM=INSUM+INUM(I,J)
+      ICNT=ICNT+1
+  189 CONTINUE
+C
+C     **************************************************************
+C     CALCULATE AVERAGE IONIZATION ENERGY OF SOLID
+C     **************************************************************
+C
+      IAVE=0.
+      DO 192 I=1,NC
+      IZ=IFIX(AZ(I,J))/INUM(I,J)
+  192 IAVE=IAVE+FRACT(I,J)*INUM(I,J)*ION(IZ)
+C
+C     **************************************************************
+C     CALCULATE EFFECTIVE CHARGE AND MASS OF MIXTURE.
+C     **************************************************************
+C
+  190 ZSUM=0.
+      ASUM=0.
+      FSUM=0.
+      DO 191 I=1,NC
+      FRCT=FRACT(I,J)
+      FSUM=FSUM+FRCT*INUM(I,J)
+      ZSUM=ZSUM+FRCT*AZ(I,J)
+  191 ASUM=ASUM+FRCT*AA(I,J)
+      AZ(1,J)=ZSUM/FSUM
+      AA(1,J)=ASUM/FSUM
+      IF (PRES(J).EQ.0.) GO TO 194
+C
+C     **************************************************************
+C     CONVERT THICKNESS FROM CM TO MILIGRAMS/CM**2 FOR GAS.
+C     **************************************************************
+C
+      IF(THCK(J).LT.0.) THCK(J)=-AA(1,J)*THCK(J)*PRES(J)/(22.4*760.)
+      THCKCM(J)=THCK(J)*(22.4*760.)/(PRES(J)*AA(1,J))
+      GO TO 195
+  194 CONTINUE
+C
+C     **************************************************************
+C     FOR SOLID  -  FOR SOLID  -  FOR SOLID  -  FOR SOLID
+C     **************************************************************
+C
+      IONZ(J)=IAVE/FSUM
+      IF (THCK(J).LT.0.) THCK(J)=-THCK(J)*DENSITY(IZ)*1000.
+      THCKCM(J)=THCK(J)/(DENSITY(IZ)*1000.)
+  195 CONTINUE
+      WRITE(LON2,1500)
+ 1500 FORMAT(/,' EQUIVALENT ABSORBER CHARGE AND MASS.')
+      WRITE(LON2,1600)
+ 1600 FORMAT(/,' ABSORBER # ','      Z*       A*    IAVE(EV)     ',
+     1  'P(TORR) T(MG/CM**2)       T(CM)')
+      DO 196 J=1,IM
+  196 WRITE(LON2,1700) J,AZ(1,J),AA(1,J),IONZ(J),PRES(J),THCK(J),
+     1  THCKCM(J)
+ 1700 FORMAT(' ',4X,I2,4X,2F9.3,1P4E12.4)
+      GO TO 10
+C
+C     **************************************************************
+C     OUTPUT STOPPING POWERS.
+C     **************************************************************
+C
+  200 CONTINUE
+      IRTN=1
+      GO TO 750
+  205 CONTINUE
+      IF(LON2.EQ.7) WRITE(LON2,1050)
+      IF(LON2.EQ.6) WRITE(LON2,1052)
+      DO 245 J=1,IM
+      WRITE(LON2,2000) J
+ 2000 FORMAT(/,' STOPPING POWER (MEV/(MG/CM**2)) IN ABSORBER #',I2)
+      ZT=AZ(1,J)
+      IZT=ZT+.5
+      AT=AA(1,J)
+      IAVE=IONZ(J)*1.E-06
+      IPC=IP
+      ILP=1
+  210 IDP=MIN0(IPC,7)-1
+      IHP=ILP+IDP
+      WRITE(LON2,2100) (PZ(I),PA(I),I=ILP,IHP)
+ 2100 FORMAT(/,' E(MEV/A)   Z,A=',8(F4.1,',',F5.1,3X))
+      DO 240 L=1,IE
+      EA=EP(L)
+      NK=0
+      DO 230 I=ILP,IHP
+      ZP=PZ(I)
+      IZP=ZP+.5
+      AP=PA(I)
+      NK=NK+1
+  230 SPWR(NK)=STOPP(EA)
+  240 WRITE(LON2,2200) EA/1000.,(SPWR(K),K=1,NK)
+ 2200 FORMAT(' ',F10.3,5X,8(F10.4,3X))
+      ILP=IHP+1
+      IF (ILP.GT.IP) GO TO 245
+      IPC=IPC-IDP-1
+      GO TO 210
+  245 CONTINUE
+      GO TO 10
+C
+C     **************************************************************
+C     OUTPUT RANGES
+C     **************************************************************
+C
+  250 CONTINUE
+      IRTN=2
+      GO TO 750
+  255 CONTINUE
+      IF(LON2.EQ.7) WRITE(LON2,1050)
+      IF(LON2.EQ.6) WRITE(LON2,1052)
+      DO 295 J=1,IM
+      ZT=AZ(1,J)
+      IZT=ZT+.5
+      AT=AA(1,J)
+      IAVE=IONZ(J)*1.E-06
+      IHP=MIN0(IP,8)
+      DO 280 I=1,IHP
+      ZP=PZ(I)
+      IZP=ZP+.5
+      AP=PA(I)
+      R0=0.D0
+      C=AP/1000.
+      EL=EP(1)/100.
+      IF (EMINR.GT.0) EL=EMINR
+      WRITE(LON2,2050) J,EL
+ 2050 FORMAT(/,' RANGE (MG/CM**2) IN ABSORBER #',I2,'   EMIN=',F7.2,
+     1   ' KEV/A ')
+      R=RANGE(EL,EL)
+      DO 280 L=1,IE
+      EA=EP(L)
+      DE=(EA-EL)*IE/100.
+      IF (DER.GT.0.) DE=DER
+      ERES(L,I)=RANGE(EA,DE)*C
+  280 EL=EA
+      WRITE(LON2,2100) (PZ(I),PA(I),I=1,IHP)
+      DO 290 L=1,IE
+  290 WRITE(LON2,2200) EP(L)/1000.,(ERES(L,I),I=1,IHP)
+  295 CONTINUE
+      GO TO 10
+C
+C      OUTPUT ENERGY LOSSES.
+C
+  300 CONTINUE
+      IRTN=3
+      GO TO 750
+  305 CONTINUE
+      IF(LON2.EQ.7) WRITE(LON2,1050)
+      IF(LON2.EQ.6) WRITE(LON2,1052)
+      DO 306 K=1,IE
+  306 ERES(K,1)=EP(K)
+      EH=EP(IE)
+C
+C     **************************************************************
+C     THE TRICK HERE IS TO TRY TO MAKE SOME INTELLIGENT CHOICE
+C     FOR THE INTEGRATION STEP SIZE, DE, AND THE STARTING POINT,
+C     EMIN.  FOR PARTICLES JUST PUNCHING THRU THIS CAN BE CRUCIAL!!
+C
+C     MAKE AN ESTIMATE OF WHETHER CLOSE TO STOPPING OR NOT FOR
+C     LARGEST Z.
+C     **************************************************************
+C
+      IZMX=1
+      DO 307 I=2,IP
+  307 IF(PZ(I).GT.PZ(IZMX)) IZMX=I
+      AP=PA(IZMX)
+      ZP=PZ(IZMX)
+      IZP=ZP+.5
+      ELOS=0.
+      DO 308 J=1,IM
+      AT=AA(1,J)
+      ZT=AZ(1,J)
+      IZT=ZT+.5
+      IAVE=IONZ(J)*1.E-06
+      EA=EP(1)-ELOS
+      IF(EA.LT.0.) GO TO 309
+  308 ELOS=ELOS+STOPP(EA)*THCK(J)*1000./AP
+  309 IF((EA-ELOS).LT.0.5*EA) THEN
+C
+C     **************************************************************
+C     CAREFUL-- CLOSE TO STOPPING
+C     **************************************************************
+C
+        DE=AMIN1(EP(1)/100.,DEP/10.)
+        EL=DE
+      ELSE
+        DE=AMIN1(EP(1)/10.,DEP/10.)
+        EL=DE/10.
+      ENDIF
+      IF (DER.GT.0.) DE=DER
+      NE=EH/DE
+      NE=MIN0(NE,10000)
+      DE=EH/NE
+      IF (EMINR.GT.0) EL=EMINR
+      DO 345 I=1,IP
+      AP=PA(I)
+      C=AP/1000.
+      ZP=PZ(I)
+      IZP=ZP+.5
+      DO 330 J=1,IM
+      J1=J+1
+      AT=AA(1,J)
+      ZT=AZ(1,J)
+      IZT=ZT+.5
+      IAVE=IONZ(J)*1.E-06
+      THK=THCK(J)
+      R0=0.D0
+      EA=EL
+      DO 310 K=1,NE+1
+      RNGE(K)=RANGE(EA,DE)*C
+  310 EA=EA+DE
+      DO 330 K=1,IE
+      EA=ERES(K,J)
+      DKK=(EA-EL)/DE+1.
+      KK=DKK
+      IF (KK.GT.0) THEN
+        RNG=RNGE(KK)
+      ELSE
+        KK=1
+        RNG=0.0
+      ENDIF
+      DIF=DKK-KK
+      RNG=(RNGE(KK+1)-RNG)*DIF+RNG
+      RNGL=RNG-THK
+      IF (RNGL.GT.0.) THEN
+        KKL=KK
+  320   IF (RNGL.GT.RNGE(KKL)) THEN
+          RNG0=RNGE(KKL)
+        ELSE
+          KKL=KKL-1
+          IF (KKL.GT.1) GO TO 320
+          RNG0=0.
+        ENDIF
+        DIFR=RNGE(KKL+1)-RNG0
+        ERES(K,J1)=(KKL-1.+(RNGL-RNG0)/DIFR)*DE+EL
+      ELSE
+        ERES(K,J1)=0.
+      ENDIF
+  330 CONTINUE
+C
+      WRITE(LON2,3003)
+ 3003 FORMAT(1H ,/)
+C
+      WRITE(LON2,3000) ZP,AP,EL,DE
+ 3000 FORMAT(' ENERGY LOSS(MEV) FOR ZP=',F4.1,' AP=',F5.1,
+     1  '  EMIN=',F7.2,' KEV/A   E-STEP=',F7.2,' KEV/A')
+      DO 332 J=1,30
+  332 MESBUF(J)='    '
+      ENCODE(120,3100,MESBUF)(J,J=1,IM)
+ 3100 FORMAT('   E0 (MEV) ',9('    ABS.#',I2,' '))
+      IPNT=3*(IM+1)+1
+      MESBUF(IPNT)=' E-E'
+      MESBUF(IPNT+1)='XIT('
+      MESBUF(IPNT+2)='MEV)'
+      WRITE(LON2,3003)
+      WRITE(LON2,3200) MESBUF
+ 3200 FORMAT(' ',30A4)
+      DO 335 K=1,IE
+  335 WRITE(LON2,3300) ERES(K,1)*C,((ERES(K,J)-ERES(K,J+1))*C,J=1,IM)
+     1   ,ERES(K,IM+1)*C
+ 3300 FORMAT(' ',F11.4,1X,10(2X,G9.3,1X))
+C
+C     **************************************************************
+C     OUTPUT ENERGY LOSSES TO FILE.
+C     **************************************************************
+C
+      IF (.NOT.IFILE) GO TO 345
+      IBUF(1)=IZP
+      IBUF(2)=EP(1)
+      IBUF(3)=IE
+      IBUF(4)=DEP
+      DO 336 K=1,IE
+  336 IBUF(K+4)=ERES(K,IM+1)+.5
+      WRITE(LOF,3400) (IBUF(K),K=1,IE+4)
+ 3400 FORMAT(10I8)
+      DO 337 K=1,IE+4
+  337 IBUF(K)=0
+  345 CONTINUE
+      GO TO 10
+C
+C     **************************************************************
+C     DEFINE PROJECTILES.
+C     **************************************************************
+C
+  350 CONTINUE
+      CALL UNPACK(IWD,ICH,80)
+      IP=1
+      II=5
+  355 CALL BLANK(ICH,II,IFLG)
+      GO TO (360,390) IFLG
+  360 CALL ELEMENTX(ICH,II,IP,IGO,1)
+      GO TO (365,380) IGO
+  365 CALL NUMBER(ICH,II,IGO,ZP)
+      GO TO (370,375) IGO
+  370 CALL CHARA(ICH,II,5,IGO)
+      GO TO (390,355) IGO
+  375 PZ(IP)=ZP
+      PA(IP)=0.
+  380 IP=IP+1
+      GO TO 355
+  390 IP=IP-1
+      IF (IP.EQ.0) GO TO 910
+      IDP=1
+      IF (IP.NE.3) GO TO 394
+      IF (PZ(2).LE.PZ(3)) GO TO 394
+      IDP=PZ(3)
+      IPL=PZ(1)
+      IPH=PZ(2)
+      IP=(IPH-IPL)/IDP+1
+      IZ=IPL
+      DO 393 I=1,IP
+      PZ(I)=IZ
+      IZ=IZ+IDP
+  393 PA(I)=0.
+  394 CONTINUE
+      DO 395 I=1,IP
+  395 IF (PA(I).EQ.0.) PA(I)=CON(IFIX(PZ(I)+.5))*.6023
+      GO TO 10
+C
+C     **************************************************************
+C     INPUT INCIDENT ENERGY PER NUCLEON.
+C     **************************************************************
+C
+  400 CONTINUE
+      CALL UNPACK(IWD,ICH,80)
+      IE=1
+      II=3
+  405 CALL BLANK(ICH,II,IFLG)
+      GO TO (410,440) IFLG
+  410 CALL NUMBER(ICH,II,IGO,EA)
+      GO TO (430,420) IGO
+  420 IF (EA.LE.0.) GO TO 410
+      EP(IE)=EA*1000.
+      IE=IE+1
+      GO TO 410
+  430 CALL CHARA(ICH,II,5,IGO)
+      GO TO (440,405) IGO
+  440 IE=IE-1
+      IF (IE.EQ.0) GO TO 910
+      DEP=EP(1)
+      EL=DEP
+      IF (IE.EQ.3) GO TO 444
+      IF (IE.LT.3) GO TO 448
+      DO 441 I=2,IE
+  441 IF (EP(I).LE.EP(I-1)) GO TO 910
+      GO TO 448
+  444 DEP=EP(3)
+      IF (EP(2).LT.DEP) GO TO 448
+      EH=EP(2)
+      IF ((EH-EL).LT.DEP) GO TO 448
+      IE=(EH-EL)/DEP+1.5
+      EA=EL
+      DO 446 I=1,IE
+      EP(I)=EA
+  446 EA=EA+DEP
+  448 CONTINUE
+      IDIV=.FALSE.
+      GO TO 10
+C
+C     ASSIGN OUTPUT TO LP   ****************************************
+C
+  450 CONTINUE
+      LON2=7                            !ASSIGN TO LIST-FILE
+      LON3=7                            !ASSIGN TO LIST-FILE
+      GO TO 10
+C
+C     ASSIGN OUTPUT TO CONSOLE   ***********************************
+C
+  500 CONTINUE
+      LON2=6                            !ASSIGN TO TERMINAL
+      LON3=7                            !ASSIGN TO LIST-FILE
+      GO TO 10
+C
+C     ASSIGN FILE TO RECEIVE ENERGY LOSSES   ***********************
+C
+  550 CONTINUE
+      WRITE(LON,5000)
+ 5000 FORMAT(' FILE WILL CONTAIN ENERGY LOSS INFORMATION IN THE',
+     1 ' FOLLOWING FORMAT:',
+     2 //,' REC#1:  TITLE',
+     3 /,' REC#2:  Z1,E0,NE,DE,E-EXIT1,E-EXIT2,...,E-EXIT-NE.'
+     4 /,' REC#3:  Z2,E0,NE,DE,E-EXIT1,E-EXIT2,...,E-EXIT-NE.'
+     5 /,20X'.',/,20X'.',/,20X'.',/,' WHERE:   Z = Z OF PROJECTILE',
+     6 /,'         E0 = FIRST INCIDENT ENERGY',
+     7 /,'         NE = NUMBER OF INCIDENT ENERGIES',
+     8 /,'         DE = INCIDENT ENERGY STEP',/,'         E-EXIT-I =',
+     9  ' EXIT ENERGY FOR PROJ. OF INCIDENT ENERGY E=E0+(I-1)*DE')
+      WRITE(LON,5001)
+ 5001 FORMAT(/,' ALL ENERGIES ARE IN KEV/A - FORMAT IS 10I8')
+      WRITE(LON,5010)
+ 5010 FORMAT(/,' ENTER NAME OF OUTPUT FILE.')
+      READ(LIN,5100,END=2,ERR=4)NAMFIL
+ 5100 FORMAT(20A4)
+      IF(LIN.NE.5) WRITE(LON,12)NAMFIL
+C
+      IFILE=.FALSE.
+      CALL FOPEN(CNAMFIL,LOF,IERR)
+      IF(IERR.NE.0) GO TO 10
+      IFILE=.TRUE.
+C
+      WRITE(LON,5300)
+ 5300 FORMAT(1H ,'ENTER TITLE')
+      READ(LIN,5100,END=2,ERR=4)(IBUF(I),I=1,20)
+      IF(LIN.NE.5) WRITE(LON,12)(IBUF(I),I=1,20)
+      WRITE(LOF,5100)(IBUF(I),I=1,20)
+      DO 570 I=1,20
+      IBUF(I)=0
+  570 CONTINUE
+      GO TO 10
+C
+C     **************************************************************
+C     REDEFINE DEFAULTS FOR RANGE CALC.
+C     (SECRET INPUT TO CHANGE EMIN,DE FOR RANGE INTEGRATION
+C     BY ENTERING COMMAND - - RNGE EMIN,DE)
+C     **************************************************************
+C
+  750 CONTINUE
+      CALL UNPACK(IWD,ICH,80)
+      II=5
+      CALL BLANK(ICH,II,IFLG)
+      GO TO (753,757) IFLG
+  753 CALL NUMBER(ICH,II,IGO,EMINR)
+      GO TO (757,755) IGO
+  755 CALL NUMBER(ICH,II,IGO,DER)
+  757 CONTINUE
+C
+C     **************************************************************
+C     ERROR MESSAGES.
+C     **************************************************************
+C
+      IFLG=0
+      IF (IM.NE.0) GO TO 760
+      IFLG=1
+      WRITE(LON,7000)
+ 7000 FORMAT(' MUST DEFINE ABSORBER MATERIAL.')
+  760 IF (IP.NE.0) GO TO 770
+      IFLG=1
+      WRITE(LON,7100)
+ 7100 FORMAT(' MUST DEFINE STOPPING PROJECTILES')
+  770 IF (IE.NE.0) GO TO 780
+      IFLG=1
+      WRITE(LON,7200)
+ 7200 FORMAT(' MUST ENTER INCIDENT ENERGIES.')
+  780 IF (IFLG.NE.0) GO TO 10
+      GO TO (205,255,305) IRTN
+  800 CONTINUE
+      CALL EXIT
+  900 CONTINUE
+      WRITE(LON,9000)
+ 9000 FORMAT(' INPUT ERROR.')
+      GO TO 10
+  910 WRITE(LON,9100)
+ 9100 FORMAT(' ARGUMENT LIST NOT UNDERSTOOD.')
+      GO TO 10
+ 9300 FORMAT(' SORRY - DO NOT HAVE DENSITY FOR THIS SOLID - ',
+     1 /,' MUST SPECIFY MG/CM**2')
+      END
+C$PROG BLOCKDATA
+C
+C      PROGRAM STOP
+C      WRITTEN BY T.C.AWES ORNL
+C      JULY 1983
+C      CALCULATES ENERGY LOSSES FOR ALL Z'S IN ANY ABSORBER
+C      OR SERIES OF ABSORBERS.
+C
+      BLOCK DATA
+C
+C      I/O VARIABLES.
+C
+      COMMON /SYMBOL/ BLNK,PNT,GASS,MNS,NUCN(105),ICHR(5)
+      INTEGER*4 BLNK,PNT,GASS
+C
+      CHARACTER*60 CNUCN(7)
+C
+      EQUIVALENCE (CNUCN,NUCN)
+C
+      DATA BLNK,PNT,GASS,MNS/'00000020'X,'0000002E'X,'GAS ',
+     1  '0000002D'X/
+C      CHARACTERS IN ICHR ARE * + ( ) ,
+      DATA (ICHR(I),I=1,5)/'0000002A'X,'0000002B'X,'00000028'X,
+     1  '00000029'X,'0000002C'X/
+      DATA CNUCN/
+     1 'H   HE  LI  BE  B   C   N   O   F   NE  NA  MG  AL  SI  P   '
+     2,'S   CL  AR  K   CA  SC  TI  V   CR  MN  FE  CO  NI  CU  ZN  '
+     3,'GA  GE  AS  SE  BR  KR  RB  SR  Y   ZR  NB  MO  TC  RU  RH  '
+     4,'PD  AG  CD  IN  SN  SB  TE  I   XE  CS  BA  LA  CE  PR  ND  '
+     5,'PM  SM  EU  GD  TB  DY  HO  ER  TM  YB  LU  HF  TA  W   RE  '
+     6,'OS  IR  PT  AU  HG  TL  PB  BI  PO  AT  RN  FR  RA  AC  TH  '
+     7,'PA  U   NP  PU  AM  CM  BK  CF  ES  FM                      '/
+      COMMON/IO/ LIN,LON,LON2,LON3
+      DATA LIN,LON,LON2,LON3/5,6,6,7/
+      COMMON /ABSS/AZ(5,10),AA(5,10),INUM(5,10),IKEY(5,10),FRACT(5,10),
+     1 NCOM(10),PRES(10),THCK(10),IONZ(10)
+      REAL*4 IONZ
+      COMMON /PROJ/PZ(100),PA(100),EP(500)
+C
+C      CALCULATION VARIABLES.
+C
+      REAL*4 IAVE,ION(92),IONGS(92),CON(92),C2S(92),DENSITY(92)
+      REAL*4 A0S(10),A1S(10),A2S(10),A3S(10),A4S(10)
+      LOGICAL ISW4
+      COMMON /ARRAYS/ION,IONGS,C2S,A0S,A1S,A2S,A3S,A4S
+      COMMON /CONSTANT/TMC2,PI,E4,CON,DENSITY
+      COMMON /CONTROL/ISW1,ISW2,ISW3,ISW4
+      COMMON /PARTICLE/IZT,IZP,ZT,ZP,AT,AP,SPWRH
+      REAL*8 R0
+      COMMON /RUNGE/DER,EMIN,E0,DUMY,R0
+      COMMON /STOPPING/IAVE,CFACT,C2,A0,A1,A2,A3,A4
+C
+      DATA ION/17.1,45.2,47.,63.,75.,79.,84.4,104.8,126.4,150.9,
+     1 141.,149.,162.,159.,168.9,179.2,187.2,200.,189.4,195.,
+     2 215.,228.,237.,257.,275.,284.,304.,314.,330.,323.,
+     3 335.4,323.,354.7,343.4,360.5,368.2,349.7,353.3,365.,382.,
+     4 391.3,393.,416.2,428.6,436.4,456.,470.,466.,479.,511.8,
+     5 491.9,491.3,491.8,489.5,484.8,485.5,493.8,512.7,520.2,540.,
+     6 537.,545.9,547.5,567.,577.2,578.,612.2,583.3,629.2,637.,
+     7 655.1,662.9,682.,695.,713.6,726.6,743.7,760.,742.,768.4,
+     8 764.8,761.,762.9,765.1,761.7,764.2,762.3,760.1,767.9,776.4,
+     9 807.,808./
+C
+      DATA IONGS/19.,42.,0.,0.,0.,66.2,86.,99.,118.8,135.,
+     1 0.,0.,0.,0.,0.,0.,170.3,180.,0.,0.,
+     2 0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,
+     3 0.,0.,0.,0.,339.3,347.,0.,0.,0.,0.,
+     4 0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,
+     5 0.,0.,452.4,459.,0.,0.,0.,0.,0.,0.,
+     6 0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,
+     7 0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,
+     8 0.,0.,0.,0.,0.,733.1,0.,0.,0.,0.,
+     9 0.,0./
+C
+      DATA CON/
+     & 1.674,6.647,11.52,14.97,17.95,19.95,23.26,26.57,31.55,33.52,
+     1 38.15,40.37,44.80,46.64,51.41,53.24,58.87,66.34,64.89,66.56,
+     2 74.62,79.54,84.53,86.34,91.96,92.74,97.85,97.49,105.5,108.6,
+     3 115.7,120.5,124.3,131.1,132.6,139.2,141.9,145.5,147.6,151.5,
+     4 154.2,159.3,164.3,167.8,170.9,176.6,179.1,186.6,190.6,197.0,
+     5 202.2,211.8,210.7,218.0,220.6,228.1,230.6,232.6,233.9,239.4,
+     6 244.0,250.0,252.3,261.0,263.8,269.8,273.8,277.6,280.3,287.3,
+     7 290.4,296.2,300.5,305.3,309.0,315.7,319.0,324.0,327.1,332.9,
+     8 339.2,344.1,347.0,348.6,348.6,368.5,370.1,375.1,376.8,385.1,
+     9 383.4,395.3/
+C
+      DATA C2S/1.44,1.397,1.6,2.59,2.815,2.989,3.35,3.,2.352,2.199,
+     1 2.869,4.293,4.739,4.7,3.647,3.891,5.714,6.5,5.833,6.252,
+     2 5.884,5.496,5.055,4.489,3.907,3.963,3.535,4.004,4.175,4.75,
+     3 5.697,6.3,6.012,6.656,6.335,7.25,6.429,7.159,7.234,7.603,
+     4 7.791,7.248,7.671,6.887,6.677,5.9,6.354,6.554,7.024,7.227,
+     5 8.48,7.81,8.716,9.289,8.218,8.911,9.071,8.444,8.219,8.,
+     6 7.786,7.58,7.38,7.592,6.996,6.21,5.874,5.706,5.542,5.386,
+     7 5.505,5.657,5.329,5.144,5.851,5.704,5.563,5.034,5.46,4.843,
+     8 5.311,5.982,6.7,6.928,6.979,6.954,7.82,8.448,8.609,8.679,
+     9 8.336,8.204/
+C
+      DATA DENSITY/1.,1.,0.5298,1.803,2.351,2.267,1.,1.,1.,1.,
+     1 0.9702,1.737,2.699,2.322,1.822,2.069,1.,1.,0.8633,1.341,
+     2 2.998,4.52,6.102,7.193,7.435,7.867,8.797,8.897,8.951,7.107,
+     3 5.909,5.338,5.72,4.786,3.401,1.,1.529,2.6,4.491,6.471,
+     4 8.604,10.21,1.,12.18,12.4,11.96,10.47,8.582,7.315,7.283,
+     5 6.618,6.225,4.939,1.,1.899,3.522,6.175,6.673,6.775,7.003,
+     6 1.,7.557,5.259,7.903,8.279,8.554,8.821,9.092,9.335,6.979,
+     7 9.831,13.13,16.6,19.29,21.04,22.57,22.51,21.44,19.31,13.56,
+     8 11.88,11.32,9.813,9.253,1.,1.,1.,5.023,1.,11.66,
+     9 15.4,19.05/
+C
+      DATA A0S/5.05,4.41,7.65,11.57,14.59,19.07,17.11,15.0,17.8,20.4/
+      DATA A1S/2.05,1.88,2.99,4.39,5.46,7.02,6.10,5.15,6.18,6.97/
+      DATA A2S/.304,.281,.419,.598,.733,.931,.778,.626,.766,.874/
+      DATA A3S/.020,.018,.025,.035,.042,.053,.043,.032,.041,.048/
+      DATA A4S/4.7,4.2,5.5,7.5,9.0,11.2,8.6,6.0,7.9,9.5/
+C
+      DATA TMC2,PI,E4/1.02195,3.14159,2.074E-05/
+      DATA ISW1,ISW2,ISW3,ISW4/0,0,0,.FALSE./
+      DATA EMIN/1./
+C
+      END
+C$PROG HELPMAN
+      SUBROUTINE HELPMAN(KMD)
+C
+      INTEGER*4 IHELP(15,24)
+C
+      CHARACTER*60 CHELP(24)
+C
+      EQUIVALENCE (CHELP,IHELP)
+      DATA (CHELP(I),I=1,10)/
+     &'CMD      List      Meaning                                  ',
+     &'PROJ  P1,P2,P3,... Define Stoppee  (Pi = element or Z)      ',
+     &'EA    E1,E2,E3,... Define MeV/nucleon of Stoppee            ',
+     &'                   (increasing order unless E3=increment)   ',
+     &'                   (if only one Proj, E=total:   not E/A)   ',
+     &'DEDX               Calc. Stopping Power MeV/(mg/cm**2)      ',
+     &'RNGE  (EMIN,DE)    Calc. Range mg/cm**2 (Opt. EMIN,DE keV/A)',
+     &'ELOS  (EMIN,DE)    Calc. E-loss in a series of absorbers    ',
+     &'LP                 Assign output to stopx.log               ',
+     &'CON                Assign output to terminal (default)      '/
+      DATA (CHELP(I),I=11,24)/
+     &'CMDF  FILENAME     Process commands from FILENAME           ',
+     &'FILE               Assign output file for Energy Losses.    ',
+     &'END                EXIT                                     ',
+     &'ABSB               Define Absorbers: Prompted for each      ',
+     &'                                                            ',
+     &'For solid, Enter:  Ele-mix Thickness                        ',
+     &'For gas,   Enter:  Ele-mix "GAS" Pressure(torr) Thickness   ',
+     &'                                                            ',
+     &'For 3.5mg/cm**2 of Silicon, Enter:  28SI 3.5                ',
+     &'                                                            ',
+     &'For 10% Methane + 90% Argon at 500 torr and 30cm thick,     ',
+     &'Enter:   .1*(C 1H4)+.9*40AR GAS 500. -30.                   ',
+     &'                                                            ',
+     &'Enter negative Thichness if in cm, otherwise in mg/cm**2    '/
+C
+      IF(KMD.EQ.'HELP') WRITE(6,10)((IHELP(I,J),I=1,15),J=1,17)
+      IF(KMD.EQ.'HLPX') WRITE(6,10)((IHELP(I,J),I=1,15),J=14,24)
+   10 FORMAT(1H ,15A4)
+      WRITE(6,20)
+   20 FORMAT(1H )
+      WRITE(6,30)
+   30 FORMAT(1H ,'Type: HELP for CMD-list  or  HLPX for example')
+      RETURN
+      END
+C$PROG NUCMD
+      SUBROUTINE NUCMD(IWD,LINP,LCMD,IERR)
+C
+      IMPLICIT INTEGER*4 (A-Z)
+C
+      INTEGER*4 IWD(20),NAMF(20)
+C
+      CHARACTER*80 CNAMF
+C
+      EQUIVALENCE (CNAMF,NAMF)
+C
+      IERR=0
+C
+      CLOSE(UNIT=LINP)
+      IA=NXNB(IWD,5,80)
+      IF(IA.LE.0) GO TO 120
+      IB=LSNB(IWD,IA,80)
+      IF(IB.LE.0) GO TO 120
+C
+      DO 20 I=1,20
+      NAMF(I)='    '
+   20 CONTINUE
+C
+      CALL LODUP(IWD,IA,IB,NAMF,1)
+C
+      OPEN(UNIT     = LINP,
+     1     FILE     = CNAMF,
+     1     STATUS   = 'OLD',
+     1     ACCESS   = 'SEQUENTIAL',
+     1     RECL     = 80,
+     1     IOSTAT   = STAT)
+C
+      IF(STAT.NE.0) GO TO 100
+      LCMD=LINP
+      RETURN
+C
+  100 WRITE(6,110)STAT
+  110 FORMAT(1H ,'ERROR TRYING TO OPEN CMD FILE - STAT =',I8)
+      GO TO 150
+C
+  120 WRITE(6,130)
+  130 FORMAT(1H ,'SYNTAX ERROR IN CMD FILE SPECIFICATION')
+C
+  150 WRITE(6,160)
+  160 FORMAT(1H ,'CONTROL SWITCHED TO TERMINAL')
+      IERR=1
+      LCMD=5
+      RETURN
+      END
+C$PROG FOPEN
+      SUBROUTINE FOPEN(CNAMFIL,LUN,IERR)
+C
+      CHARACTER*80 CNAMFIL
+C
+      IERR=0
+      CLOSE(UNIT=LUN)
+C
+      OPEN(UNIT     = LUN,
+     1     FILE     = CNAMFIL,
+     1     STATUS   = 'NEW',
+     1     ACCESS   = 'SEQUENTIAL',
+     1     RECL     = 80,
+     1     IOSTAT   = ISTAT)
+C
+      IF(ISTAT.EQ.0) RETURN
+C
+      WRITE(5,10)ISTAT
+   10 FORMAT(1H ,'ERROR OPENING ELOSS OUTPUT FILE - ISTAT =',I8)
+      IERR=1
+      RETURN
+      END
+C$PROG ABSORBER
+      SUBROUTINE ABSORBER(IWD,IB,IM,IFLG)
+      COMMON/IO/ LIN,LON,LON2,LON3
+      COMMON /ABSS/AZ(5,10),AA(5,10),INUM(5,10),IKEY(5,10),FRACT(5,10),
+     1 NCOM(10),PRES(10),THCK(10),IONZ(10)
+      REAL*4 IONZ
+      COMMON /ABS2/KEY,FRCT
+      INTEGER*4 IWD(20),ICH(80)
+C
+C      ROUTINE TO INTERPRET SPECIFICATION OF STOPPING MATERIAL.
+C
+      IFLG=1
+      NCOM(IM)=0
+      PRS=0.
+      THK=0.
+      FRCT=1.
+      KEY=1
+      CALL UNPACK(IWD,ICH,IB)
+      II=1
+      CALL BLANK(ICH,II,IFLG)
+      IF (IFLG.EQ.2) GO TO 900
+   50 CALL ELEMENTX(ICH,II,IM,IGO,0)
+      GO TO (500,100) IGO
+  100 CALL CHARA(ICH,II,1,IGO)
+      GO TO (110,50) IGO
+  110 CALL CHARA(ICH,II,2,IGO)
+      GO TO (120,115) IGO
+  115 KEY=KEY+1
+      GO TO 50
+  120 CALL GAS(ICH,II,IGO,PRS,THK)
+      GO TO (130,900,810) IGO
+  130 CALL ELEMENTX(ICH,II,IM,IGO,0)
+      GO TO (140,100) IGO
+  140 CALL THICK(ICH,II,IGO,THK)
+      GO TO (800,900) IGO
+C
+  500 CALL NUMBER(ICH,II,IGO,ANUM)
+      FRCT=ANUM
+      GO TO (800,510) IGO
+  510 CALL CHARA(ICH,II,1,IGO)
+      GO TO (800,520) IGO
+  520 CALL ELEMENTX(ICH,II,IM,IGO,0)
+      GO TO (600,530) IGO
+  530 CALL CHARA(ICH,II,1,IGO)
+      GO TO (540,520) IGO
+  540 CALL CHARA(ICH,II,2,IGO)
+      GO TO (560,550) IGO
+  550 KEY=KEY+1
+      CALL NUMBER(ICH,II,IGO,ANUM)
+      FRCT=ANUM
+      GO TO (520,510) IGO
+  560 CALL GAS(ICH,II,IGO,PRS,THK)
+      GO TO (570,900,810) IGO
+  570 CALL ELEMENTX(ICH,II,IM,IGO,0)
+      GO TO (580,520) IGO
+  580 CALL THICK(ICH,II,IGO,THK)
+      GO TO (800,900) IGO
+C
+  600 CALL CHARA(ICH,II,3,IGO)
+      GO TO (800,610) IGO
+  610 CALL ELEMENTX(ICH,II,IM,IGO,0)
+      GO TO (800,620) IGO
+  620 CALL CHARA(ICH,II,1,IGO)
+      GO TO (630,610) IGO
+  630 CALL CHARA(ICH,II,4,IGO)
+      GO TO (650,540) IGO
+  650 CALL ELEMENTX(ICH,II,IM,IGO,0)
+      GO TO (800,620) IGO
+C
+  800 WRITE(LON,5000)
+ 5000 FORMAT(' NONRECOGNIZABLE ABSORBER DEFINITION.')
+      WRITE(LON,5001) ICH(II)
+ 5001 FORMAT(' ',Z8)
+      IFLG=3
+      RETURN
+  810 WRITE(LON,5100)
+ 5100 FORMAT(' IMPROPER GAS PRESSURE AND/OR THICKNESS.')
+      IFLG=3
+      RETURN
+  900 CONTINUE
+      PRES(IM)=PRS
+      THCK(IM)=THK
+      RETURN
+      END
+C$PROG BLANK
+      SUBROUTINE BLANK(ICH,II,IFLG)
+      COMMON /SYMBOL/ BLNK,PNT,GASS,MNS,NUCN(105),ICHR(5)
+      INTEGER*4 BLNK,PNT,GASS
+      INTEGER*4 ICH(80)
+C
+      IFLG=1
+   50 IF (II.GT.60) GO TO 100
+      IF (ICH(II).NE.BLNK) RETURN
+      II=II+1
+      GO TO 50
+  100 IFLG=2
+      RETURN
+      END
+C$PROG CHAR
+      SUBROUTINE CHARA(ICH,II,NCHR,IGO)
+      COMMON /SYMBOL/ BLNK,PNT,GASS,MNS,NUCN(105),ICHR(5)
+      INTEGER*4 BLNK,PNT,GASS
+      INTEGER*4 ICH(80)
+C
+      IGO=1
+      IF (ICH(II).NE.ICHR(NCHR)) RETURN
+      II=II+1
+      IGO=2
+      CALL BLANK(ICH,II,IFLG)
+      RETURN
+      END
+C$PROG ELEMENT
+      SUBROUTINE ELEMENTX(ICH,II,IN,IGO,IC)
+      COMMON /SYMBOL/ BLNK,PNT,GASS,MNS,NUCN(105),ICHR(5)
+      INTEGER*4 BLNK,PNT,GASS
+      COMMON /ABSS/AZ(5,10),AA(5,10),INUM(5,10),IKEY(5,10),FRACT(5,10),
+     1 NCOM(10),PRES(10),THCK(10),IONZ(10)
+      REAL*4 IONZ
+      COMMON /ABS2/KEY,FRCT
+      COMMON /PROJ/PZ(100),PA(100),EP(500)
+      INTEGER*4 ICH(80),JAWD(4),JNWD(4),JMWD(4)
+C
+      IGO=1
+      II0=II
+      JA=0
+      JN=1
+      DO 10 I=1,4
+      JAWD(I)=BLNK
+      JNWD(I)=BLNK
+      JMWD(I)=BLNK
+   10 CONTINUE
+      IJ=1
+      IK=1
+      IL=1
+      IF (ICH(II).LT.'30'X.OR.ICH(II).GT.'39'X) GO TO 50
+      JAWD(IJ)=ICH(II)
+      II=II+1
+      IJ=IJ+1
+   20 IF (ICH(II).LT.'30'X.OR.ICH(II).GT.'39'X) GO TO 30
+      JAWD(IJ)=ICH(II)
+      II=II+1
+      IJ=IJ+1
+      GO TO 20
+   30 CALL PACK(JAWD,JAD,4)
+      CALL SQUEZR(JAD,1,4)
+      DECODE(4,40,JAD)JA
+   40 FORMAT(I4)
+   50 IF (ICH(II).LT.'41'X.OR.ICH(II).GT.'5A'X) GO TO 900
+      JNWD(IK)=ICH(II)
+      II=II+1
+      IK=IK+1
+      IF (ICH(II).LT.'41'X.OR.ICH(II).GT.'5A'X) GO TO 60
+      JNWD(IK)=ICH(II)
+      II=II+1
+   60 CALL PACK(JNWD,JND,4)
+      DO 70 I=1,100
+   70 IF (JND.EQ.NUCN(I)) GO TO 80
+      GO TO 900
+   80 JZ=I
+      IF (ICH(II).LT.'30'X.OR.ICH(II).GT.'39'X) GO TO 500
+      JMWD(IL)=ICH(II)
+      II=II+1
+      IL=IL+1
+   90 IF (ICH(II).LT.'30'X.OR.ICH(II).GT.'39'X) GO TO 100
+      JMWD(IL)=ICH(II)
+      II=II+1
+      IL=IL+1
+      GO TO 90
+  100 CALL PACK(JMWD,JMD,4)
+      CALL SQUEZR(JMD,1,4)
+      DECODE(4,40,JMD)JN
+  500 IF(IC.EQ.0) GO TO 600
+      PZ(IN)=JZ
+      PA(IN)=JA
+      IGO=2
+      RETURN
+  600 NC=NCOM(IN)+1
+      AZ(NC,IN)=JZ
+      AA(NC,IN)=JA
+      INUM(NC,IN)=JN
+      FRACT(NC,IN)=FRCT
+      IKEY(NC,IN)=KEY
+      NCOM(IN)=NC
+      IGO=2
+      FRCT=1.
+      CALL BLANK(ICH,II,IFLG)
+      RETURN
+  900 II=II0
+      RETURN
+      END
+C$PROG NUMBER
+      SUBROUTINE NUMBER(ICH,II,IGO,ANUM)
+      COMMON /SYMBOL/ BLNK,PNT,GASS,MNS,NUCN(105),ICHR(5)
+      INTEGER*4 BLNK,PNT,GASS
+      INTEGER*4 ICH(80),JWD(8),KWD(8)
+C
+      IGO=1
+      IPNT=0
+      DO 10 I=1,8
+   10 JWD(I)=BLNK
+      IJ=1
+      IF (ICH(II).NE.PNT) GO TO 30
+      JWD(IJ)=ICH(II)
+      II=II+1
+      IJ=IJ+1
+      IPNT=1
+   30 IF (ICH(II).GE.'30'X.AND.ICH(II).LE.'39'X) GO TO 40
+      RETURN
+   40 JWD(IJ)=ICH(II)
+      IJ=IJ+1
+      II=II+1
+      IF (ICH(II).GE.'30'X.AND.ICH(II).LE.'39'X) GO TO 40
+      IF (ICH(II).NE.PNT) GO TO 50
+      IF (IPNT.NE.0) RETURN
+      IPNT=1
+      GO TO 40
+   50 CALL PACK(JWD,KWD,8)
+      CALL SQUEZR(KWD,1,8)
+      IGO=2
+      DECODE(8,100,KWD)ANUM
+  100 FORMAT(F8.0)
+      CALL BLANK(ICH,II,IFLG)
+      RETURN
+      END
+C$PROG GAS
+      SUBROUTINE GAS(ICH,II,IGO,PRS,THK)
+      COMMON /SYMBOL/ BLNK,PNT,GASS,MNS,NUCN(105),ICHR(5)
+      INTEGER*4 BLNK,PNT,GASS
+      INTEGER*4 ICH(80),ITST(4)
+C
+      IGO=1
+      DO 10 I=1,3
+   10 ITST(I)=ICH(II+I-1)
+      ITST(4)='    '
+      CALL PACK(ITST,IGS,4)
+      IF (IGS.NE.GASS) RETURN
+      IGO=2
+      II=II+3
+      CALL BLANK(ICH,II,IFLG)
+      CALL THICK(ICH,II,IGO,PRS)
+      GO TO (30,20) IGO
+   20 CALL BLANK(ICH,II,IFLG)
+      CALL THICK(ICH,II,IGO,THK)
+      GO TO (30,40) IGO
+   30 IGO=3
+   40 RETURN
+      END
+C$PROG THICK
+      SUBROUTINE THICK(ICH,II,IGO,THK)
+      COMMON /SYMBOL/ BLNK,PNT,GASS,MNS,NUCN(105),ICHR(5)
+      INTEGER*4 BLNK,PNT,GASS
+      INTEGER*4 ICH(80),JWD(8),KWD(8)
+C
+      IGO=1
+      IPNT=0
+      DO 10 I=1,8
+   10 JWD(I)=BLNK
+      IJ=1
+      IF (ICH(II).NE.MNS) GO TO 20
+      JWD(IJ)=ICH(II)
+      II=II+1
+      IJ=IJ+1
+   20 IF (ICH(II).NE.PNT) GO TO 30
+      JWD(IJ)=ICH(II)
+      II=II+1
+      IJ=IJ+1
+      IPNT=1
+   30 IF (ICH(II).GE.'30'X.AND.ICH(II).LE.'39'X) GO TO 40
+      RETURN
+   40 JWD(IJ)=ICH(II)
+      IJ=IJ+1
+      II=II+1
+      IF (ICH(II).GE.'30'X.AND.ICH(II).LE.'39'X) GO TO 40
+      IF (ICH(II).NE.PNT) GO TO 50
+      IF (IPNT.NE.0) RETURN
+      IPNT=1
+      GO TO 40
+   50 CALL PACK(JWD,KWD,8)
+      CALL SQUEZR(KWD,1,8)
+      IGO=2
+      DECODE(8,100,KWD)THK
+  100 FORMAT(F8.0)
+      RETURN
+      END
+C$PROG PACK
+      SUBROUTINE PACK(ICH,IWD,N)
+      INTEGER*4 ICH(1),IWD(1),JTEMP
+C
+C     ROUTINE TO PACK LO-ORDER BYTES FROM ICH INTO IWD
+C
+      DO 10 I=1,N
+      JTEMP=ICH(I)
+      CALL ISBYTE(JTEMP,IWD,I-1)
+   10 CONTINUE
+      RETURN
+      END
+C$PROG UNPACK
+      SUBROUTINE UNPACK(IWD,ICH,N)
+      INTEGER*4 ICH(1),IWD(1),JTEMP
+C
+C     ROUTINE TO UNPACK BYTES FROM IWD INTO LO-ORDER BYTES IN ICH
+C
+      DO 10 I=1,N
+      CALL ILBYTE(JTEMP,IWD,I-1)
+      ICH(I)=JTEMP
+   10 CONTINUE
+      RETURN
+      END
+C$PROG STOPP
+      FUNCTION STOPP(EA)
+      LOGICAL ISW4
+      COMMON /CONTROL/ISW1,ISW2,ISW3,ISW4
+      COMMON /PARTICLE/IZT,IZP,ZT,ZP,AT,AP,SPWRH
+      REAL*4 NUSPWR
+      IE=EA
+      IF (ISW1.EQ.IZT.AND.ISW2.EQ.IE) GO TO 50
+      ISW2=IE
+      SPWRH=ELSPWR(EA)
+      STOPP=SPWRH
+   50 IF (IZP.GT.1) STOPP=SPWRHI(EA)
+      IF (ISW4) RETURN
+      IF (EA.GT.2000.) RETURN
+      STOPP=STOPP+NUSPWR(EA)
+      RETURN
+      END
+C$PROG ELSPWR
+      FUNCTION ELSPWR(EA)
+      REAL*4 IAVE,ION(92),IONGS(92),CON(92),C2S(92),DENSITY(92)
+      REAL*4 A0S(10),A1S(10),A2S(10),A3S(10),A4S(10)
+      LOGICAL ISW4
+      COMMON /ARRAYS/ION,IONGS,C2S,A0S,A1S,A2S,A3S,A4S
+      COMMON /CONSTANT/TMC2,PI,E4,CON,DENSITY
+      COMMON /CONTROL/ISW1,ISW2,ISW3,ISW4
+      COMMON /PARTICLE/IZT,IZP,ZT,ZP,AT,AP,SPWRH
+      COMMON /STOPPING/IAVE,CFACT,C2,A0,A1,A2,A3,A4
+C
+C       ROUTINE TO CALCULATE THE ELECTRONIC STOPPING POWER SE(ZH*)
+C     OF HYDROGEN IN ANY MATERIAL USING EQ'S OF ZIEGLER.  STOPPING
+C     POWER FOR OTHER IONS ARE THEN GIVEN BY SE(HI)=SE(H)*((ZHI*)/
+C     (ZH*))**2 WHERE ZH* AND ZHI* ARE THE EFFECTIVE CHARGES OF
+C     HYDROGEN AND THE H.I. RESPECTIVELY.
+C       IZT=Z OF TARGET
+C       EA=KEV/AMU OF PARTICLE
+C       TMC2=2 MC**2 TWICE ELECTRON REST MASS
+C       BETA2=(V/C)**2 SQUARE OF LAB. VELOCITY.
+C       E4=E**4  E=ELECTRON CHARGE.
+C       AI,I=0,1,2,3,4 = APPROXIMATE BETHE SHELL CORRECTION PARAMETERS.
+C       CZT=APPROXIMATE BETHE SHELL CORRECTION.
+C       IAVE=AVERAGE IONIZATION ENERGY.
+C
+C       INITIALIZATION
+C
+      IF (ISW1-IZT) 50,25,50
+   25 IF (ISW3-IFIX(AT)) 50,100,50
+   50 ISW1=IZT
+      C2=C2S(IZT)
+      INDX=(IZT+15)/10
+      A0=-A0S(INDX)
+      A1= A1S(INDX)
+      A2=-A2S(INDX)
+      A3= A3S(INDX)
+      A4=-A4S(INDX)*1.E-04
+C       CONVERSION FACTOR TO MEV/(MG/CM**2) (=.6023/A, A=TGT MASS #)
+      CFACT=.6023/AT
+  100 CONTINUE
+C
+C       LOW ENERGY STOPPING USING VARELAS-BIERSACK FORMULA
+C     (PAGES 10,16 VOL.3 ANDERSON & ZIEGLER).  FOR HYDROGEN
+C     PROJECTILE OF 10-1000 KEV.  ALL COEFFICIENS BUT C2 ARE
+C     APPROXIMATED.
+C
+      IF(EA-1000.) 150,150,200
+  150 SLOW=C2*EA**.45
+      IF (EA.LT.10.) THEN
+        ELSPWR=SLOW*CFACT
+      ELSE
+        SHIGH=(243.-.375*ZT)*ZT/EA*ALOG(1.+500./EA+2.195E-06*EA/IAVE)
+        ELSPWR=SLOW*SHIGH/(SLOW+SHIGH)*CFACT
+      ENDIF
+      RETURN
+  200 CONTINUE
+C
+C       CALCULATION OF STOPPING POWER USING BETHE STOPPING (SEE
+C     VOL. 5 OF ZIEGLER).  STOPPING POWER FOR IDEAL UNIT CHARGE.
+C
+C       APPROXIMATE CALCULATION OF BETHE SHELL CORRECTION. MAKES
+C     <10% CORRECTION OVER 1-30MEV/A.
+C
+      CZT=0.
+      IF (ISW4) GO TO 250
+      IF (EA-40000.) 240,240,250
+  240 ALE=ALOG(EA)
+      CZT=A0+(A1+(A2+(A3+A4*ALE)*ALE)*ALE)*ALE
+  250 CONTINUE
+      BETA2=1.-1./(1.+EA/931189)**2
+      SPWR=8.*PI*E4*ZT/(BETA2*TMC2)*(ALOG(BETA2*TMC2/((1.-BETA2)*IAVE))
+     1  -BETA2-CZT)
+C
+C       EFFECTIVE CHARGE FOR HYDROGEN.
+      EX=0.2*SQRT(EA)+.0012*EA+1.443E-05*EA*EA
+      ZH=1.
+      IF (EX.LT.20.) ZH=1.-EXP(-EX)
+C
+C       CORRECTION FOR TARGET DEPENDENCE OF EFFECTIVE CHARGE.
+C     MAKES <5% CORRECTION OVER 1-2 MEV/A
+      ZFACT=1.
+      IF (ISW4) GO TO 300
+      IF (EA-1999.) 290,290,300
+  290 B=1.
+      IF (IZT.LT.35) B=(ZT-1.)/34.
+      ZFACT=1.+B*(0.1097-5.561E-05*EA)
+  300 CONTINUE
+C
+C       STOPPING POWER OF HYDROGEN
+      ELSPWR=SPWR*ZH*ZH*CFACT*ZFACT
+      RETURN
+      END
+C$PROG SPWRHI
+      FUNCTION SPWRHI(EA)
+      COMMON /PARTICLE/IZT,IZP,ZT,ZP,AT,AP,SPWRH
+C
+C       ROUTINE TO CALCULATE THE ELECTRONIC STOPPING POWER OF A HEAVY
+C     ION USING THE HI'S EFFECTIVE CHARGE AND THE STOPPING POWER FOR
+C     HYDROGEN.
+C
+      SPWRHI=SPWRH
+      IF (IZP.LT.2) RETURN
+      IF (IZP-3) 30,30,100
+   30 X=ALOG(EA)
+      EX=(7.6-X)**2
+      GAMMA=1.
+      IF (EX.LT.20.) GAMMA=1.+(.007+.00005*ZT)*EXP(-EX)
+      IF (IZP-3) 40,50,100
+   40 EX=.7446+.1429*X+.01562*X*X-.00267*X**3+1.325E-06*X**8
+      ZHEZH=2.*GAMMA
+      IF (EX.LT.20.) ZHEZH=ZHEZH*(1.-EXP(-EX))
+C
+C       STOPPING POWER FOR HE ION.
+      SPWRHI=SPWRH*ZHEZH*ZHEZH
+      RETURN
+C
+   50 ZLIZH=3.*GAMMA
+      EX=.7138+.002797*EA+1.348E-06*EA*EA
+      IF (EX.LT.20.) ZLIZH=ZLIZH*(1.-EXP(-EX))
+C
+C       STOPPING POWER FOR A LITHIUM ION.
+      SPWRHI=SPWRH*ZLIZH*ZLIZH
+      RETURN
+C
+  100 B=.886/5.*SQRT(EA)*ZP**(-.666666)
+      A=B+.0378*SIN(1.5708*B)
+      ZHIZH=ZP
+      IF (A.LT.20.) ZHIZH=ZP*(1.-EXP(-A)*(1.034-.1777*EXP(-.08114*ZP)))
+C
+C       STOPPING POWER OF A HEAVY ION.
+      SPWRHI=SPWRH*ZHIZH*ZHIZH
+      RETURN
+      END
+C$PROG NUSPWR
+      FUNCTION NUSPWR(EA)
+      REAL*4 NUSPWR,IAVE
+      COMMON /PARTICLE/IZT,IZP,ZT,ZP,AT,AP,SPWRH
+      COMMON /STOPPING/IAVE,CFACT,C2,A0,A1,A2,A3,A4
+C
+C       ROUTINE TO CALCULATE THE NUCLEAR (COULOMB) STOPPING
+C     POWER SN(E).  MAKES <5% CORRECTION AT 1-2MEV/A.
+C       REDE=REDUCED ENERGY
+C       SN=REDUCED NUCLEAR STOPPING POWER
+C       NUSPWR=NUCLEAR STOPPING POWER IN MEV/(MG/CM**2)
+C
+      AZ=(AT+AP)*SQRT(ZT**.666666+ZP**.666666)
+      REDE=32.53*AT*AP*EA/(ZT*ZP*AZ)
+      SN=0.5*ALOG(1.+REDE)/(REDE+0.10718*REDE**.37544)
+      NUSPWR=SN*(8.462*ZT*ZP*AP)*CFACT/AZ
+      RETURN
+      END
+C$PROG RANGE
+      FUNCTION RANGE(EA,DE)
+      REAL*8 K1,K2,K4
+      REAL*8 R0,R
+      COMMON /RUNGE/DER,EMIN,E0,DUMY,R0
+C
+C       ROUTINE TO CALCULATE THE REDUCED RANGE R BY SOLVING THE
+C     DIFF. EQ. DR/DEA=1/S(E) USING THE 4TH ORDER RUNGE-KUTTA
+C     METHOD. THE QUANTITIES ARE DEFINED AS:
+C       R=RANGE/AP*1000 (1000 SINCE W IS IN KEV BUT S(E) IS IN MEV)
+C       AP=PROJECTILE MASS
+C       EA=E/AP ENERGY PER NUCLEON IN KEV
+C       S(E)=STOPPING POWER FOR PROJECTILE IN MEV/MG/CM**2
+C
+C       CALL FIRST TIME WITH R0=0. TO OBTAIN RANGE AT E0.  CALL
+C     SUBSEQUENTLY WITH R0=R FROM PREVIOUS CALL.
+C
+      R=R0
+C
+      IF (R0) 40,40,100
+   40 IF (EA.GT.EMIN) THEN
+        R=(EA/2.)/STOPP(EA)
+        RANGE=R
+        R0=R
+        E0=EA
+        RETURN
+      ELSE
+        GO TO 150
+      ENDIF
+C
+C      EXTRAPOLATE BELOW EMIN--ZEFF BECOMES UNRELIABLE
+C      FOR LOW ENERGIES
+C
+  100 IF (EA.LT.EMIN) THEN
+  150   R=EA/(2.*STOPP(EMIN))
+        R0=R
+        E0=EA
+        RANGE=R
+        RETURN
+      ELSE
+      N=(EA-E0)/DE
+      IF(N.LT.4) N=4
+      W=(EA-E0)/N
+      K1=1./STOPP(E0)
+      DO 200 I=1,N
+      K2=1./STOPP(E0+W/2.)
+      K4=1./STOPP(E0+W)
+      R=R+(K1+4.*K2+K4)*W/6.
+      K1=K4
+  200 E0=E0+W
+      R0=R
+      RANGE=R
+      RETURN
+      ENDIF
+      END
+C$PROG SQUEZR
+      SUBROUTINE SQUEZR(IWD,IA,IB)
+C
+      BYTE IWD(1),JWD(80)
+C
+      DO 10 I=IA,IB
+      JWD(I)=IWD(I)
+      IWD(I)='20'X
+   10 CONTINUE
+C
+      J=IB+1
+      K=IB+1
+      DO 20 I=IA,IB
+      J=J-1
+      IF(JWD(J).EQ.'20'X) GO TO 20
+      K=K-1
+      IWD(K)=JWD(J)
+   20 CONTINUE
+      RETURN
+      END
