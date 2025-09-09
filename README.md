@@ -29,7 +29,7 @@ The GCSU Nuclear Physics Toolkit maintains exact numerical fidelity to the origi
 Clone the repository and install in development mode:
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/joel-saucedo/gcsu_nuclear
 cd gcsu_nuclear
 pip install -e .
 ```
